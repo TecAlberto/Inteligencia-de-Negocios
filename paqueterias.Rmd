@@ -1,0 +1,30 @@
+---
+title: "librerias"
+author: "Alberto Lopez"
+date: "25/6/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("Rtools")
+install.packages("rtweet")  # Twitter package
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("sf")   # For making maps
+install.packages("usmap")
+install.packages("reshape2")
+install.packages("tm")
+install.packages("syuzhet")
+install.packages("tidytext")
+install.packages("ggwordcloud")
+install.packages("SnowballC")
+install.packages("wordcloud")
+install.packages("RColorBrewer")
+install.packages("readr")
+install.packages("readxl")
+```
+
