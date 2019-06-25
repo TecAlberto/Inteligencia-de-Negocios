@@ -1,0 +1,225 @@
+---
+title: "Twitter analysis"
+author: "Alberto Lopez"
+date: "25/6/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Social media analysis is highly popular. This practice has two exercises using Twitter data. You can extend it to other social networks too. We will access Twitter using their official application programming interface (API).
+
+## Tasks to complete
+
+The objectives of this exercise are as follows;
+
+1. Collect a large number of tweets for a trending hashtag
+
+3. Do sentiment analysis on the tweets
+
+4. Create a wordcloud
+
+5. Make a regression analysis
+
+6. Present a prescriptive analysis by teams
+
+## Twitter API access
+
+In order to get access to Twitter API, you will have to request for a developer account. It's a free account but Twitter controls the approval process and it is not automatic. It can take anywhere from a few minutes to a few days. However, your chances of getting a quick approval are higher if you use your `.edu` email address to create an account. Also note that you will have to provide a valid mobile number. 
+
+
+## Collect tweets
+
+The first order of the business is to collect the tweets. Ideally, you would like to collect the tweets about a topic that is trending. For this exercise we will start by analyzing the "Trump" hashtag. 
+
+
+Load up the necessary libraries
+
+```{r warning=FALSE, message=FALSE, error=FALSE}
+library(rtweet)  # Twitter package
+library(dplyr)
+library(ggplot2)
+library(sf)   # For making maps
+library(usmap)
+library(reshape2)
+# Packages for text analysis and wordcloud
+library(tm)
+library(syuzhet)
+library(tidytext)
+library(ggwordcloud)
+library(SnowballC)
+library(wordcloud)
+library(RColorBrewer)
+library(readr)
+library(readxl)
+```
+
+
+### Load the .csv file with the #Trump Tweets
+
+Import the file by clicking on the file and import dataset.
+
+
+## Data exploration
+
+Let's see what variable names we have.
+
+```{r}
+names(trump)
+```
+
+It is not possible to provide description for each of these variables. However, the variables are a mix of user data and tweet data. For instance, `user_id` tells us the unique user id while `status_id` is the unique id given to this tweet. 
+
+
+I would like to show you two interesting variables: `source` and `verified`. The first one contains the information on the device that was used to send out the tweet. The second variable tells us whether the person has a verified Twitter account.
+
+Using `count()` function from `dplyr` we can see which device is the most popular. As we may have the same person tweeting multiple times, we will keep only distinct `user_id`-`source` pairs.
+
+```{r}
+trump %>% 
+  distinct(user_id, source) %>% 
+  count(source, sort = TRUE) %>% 
+  top_n(10)
+```
+
+How many verified accounts do we have in our sample?
+
+```{r}
+trump %>% 
+  distinct(user_id, verified) %>% 
+  count(verified, sort = TRUE)
+```
+
+## Sentiment analysis
+
+We will do some basic sentiment analysis. The objective is to find out the general sentiment in our tweets. The variable of interest here is `text`, which has all the tweet text. We will use lexicon-based method to identify the sentiment in each tweet first and then we will aggregate them all. For this, we will use `get_nrc_sentiment()` function from `syuzhet` package. Note that the execution takes some time so please be patient.
+
+```{r eval = FALSE}
+trump_sent <- trump$text %>% 
+    syuzhet::get_nrc_sentiment()
+```
+
+the numbers mean the number of words in each tweet that fall into that specific sentiment category.
+
+```{r}
+trump_sent %>% 
+  summarize_all(sum, na.rm = TRUE) %>% 
+  select(-negative, -positive) %>% # Dropping these helps in plotting
+  reshape2::melt() %>% 
+  ggplot(aes(reorder(variable, -value), value)) +
+  geom_col() +
+  labs(x = "Sentiment", y = "Frequency of Words") +
+  theme_minimal()
+```
+
+Plot only positive and negative sentiment.
+
+```{r}
+trump_sent %>% 
+  summarize_all(sum, na.rm = TRUE) %>% 
+  select(negative, positive) %>% 
+  reshape2::melt() %>% 
+  ggplot(aes(reorder(variable, -value), value)) +
+  geom_col() +
+  labs(x = "Sentiment", y = "Frequency of Words") +
+  theme_minimal()
+```
+
+
+## Create a wordcloud
+
+Wordcloud is a popular visualization tool.
+
+Before we can make a wordcloud, there is some preprocessing of the text that is necessary. First of all, we need to tokenize the text so that we have all the words separately identified. Next, we get rid of all the "stop words" such as articles (e.g., the, an), pronouns (e.g., he, she, it), etc. We also need to remove other words that we think may contaminate the wordcloud.^[This requires some trial and error.] 
+
+Create a tibble of all the words we want to get rid of. This list needs to be updated depending on what shows up in the wordcloud below.
+
+```{r}
+exclude_words <- tibble(word = c("http", "https", "twitter", "t.co", "Trump", "trump", "realdonaldtrump", "amp", "trump´s", "trump's", "donald", "gop", "type", "it's", "don't"))
+```
+
+We have to first get the words from all the tweets
+
+```{r}
+trump_geo <- lat_lng(trump)
+word_tokens <- trump_geo %>% 
+  select(status_id, text) %>% 
+  tidytext::unnest_tokens(word, text) %>% 
+  anti_join(stop_words) %>% 
+  anti_join(exclude_words)
+head(word_tokens)
+```
+
+The first few words that we see are probably hashtags this user used. We don't need to pay attention to individual words at this point.
+
+Find the frequency of each word and then rank them in descending order
+
+```{r}
+word_tokens_count <- word_tokens %>% 
+  count(word, sort = TRUE)
+head(word_tokens_count)
+```
+
+Make the wordcloud
+
+```{r}
+set.seed(2019)
+word_tokens_count %>% 
+  top_n(30) %>% 
+  ggplot(aes(label = word, size = n, color = word)) +
+  scale_size_area(max_size = 10) +
+  geom_text_wordcloud() +
+  theme_minimal()
+```
+
+
+## Linear regression
+
+What are the sentiments that make a tweet more popular? how can be make our tweets more popular?
+
+Let's run a regression anaysis to find out!!
+
+
+```{r}
+cbind(trump, trump_sent) %>% 
+  mutate(favorite_count = favorite_count + 1) %>% 
+  lm(log(favorite_count) ~ anger + anticipation + disgust + fear + joy +
+             sadness + surprise + trust + verified + log(followers_count+1),
+           data = .) %>% 
+  summary()
+```
+
+
+
+
+```{r}
+cbind(trump, trump_sent) %>% 
+  mutate(retweet_count = retweet_count + 1) %>% 
+  lm(log(retweet_count) ~ anger + anticipation + disgust + fear + joy +
+             sadness + surprise + trust + verified + log(followers_count+1),
+           data = .) %>% 
+  summary()
+```
+
+## max tweets
+
+
+```{r}
+summary(trump_sent)
+max <- cbind(trump, trump_sent)
+```
+
+
+```{r}
+which.max(max$anger)
+```
+
+
+```{r}
+print(max$text[[267]])
+```
+
+
+
